@@ -15,6 +15,33 @@ using namespace vex;
 competition Competition;
 
 // define your global instances of motors and other devices here
+vex::controller Controller;
+vex::brain Brain;
+
+vex::motor BLMotor(vex::PORT8,vex::gearSetting::ratio6_1);
+vex::motor MLMotor(vex::PORT9,vex::gearSetting::ratio6_1);
+vex::motor FLMotor(vex::PORT10,vex::gearSetting::ratio6_1);
+
+vex::motor FRMotor(vex::PORT18,vex::gearSetting::ratio6_1);
+vex::motor MRMotor(vex::PORT19,vex::gearSetting::ratio6_1);
+vex::motor BRMotor(vex::PORT20,vex::gearSetting::ratio6_1);
+
+bool IntakeState = false;
+vex::motor IntakeLower(vex::PORT1);
+vex::motor IntakeUpperL(vex::PORT12);
+vex::motor IntakeUpperR(vex::PORT11);
+
+
+
+//---------------------------------------------------------------------------//
+void driveTo(int R, int L, int speed) {
+  BLMotor.spinToPosition(L, vex::rotationUnits::rev, speed, vex::velocityUnits::pct, false);
+  MLMotor.spinToPosition(L, vex::rotationUnits::rev, speed, vex::velocityUnits::pct, false);
+  FLMotor.spinToPosition(L, vex::rotationUnits::rev, speed, vex::velocityUnits::pct, false);
+  BRMotor.spinToPosition(R, vex::rotationUnits::rev, speed, vex::velocityUnits::pct, false);
+  MRMotor.spinToPosition(R, vex::rotationUnits::rev, speed, vex::velocityUnits::pct, false);
+  FRMotor.spinToPosition(R, vex::rotationUnits::rev, speed, vex::velocityUnits::pct, false);
+}
 
 /*---------------------------------------------------------------------------*/
 /*                          Pre-Autonomous Functions                         */
@@ -61,17 +88,48 @@ void autonomous(void) {
 void usercontrol(void) {
   // User control code here, inside the loop
   while (1) {
-    // This is the main execution loop for the user control program.
-    // Each time through the loop your program should update motor + servo
-    // values based on feedback from the joysticks.
+    int left = Controller.Axis3.position();
+    int right = Controller.Axis2.position();
 
-    // ........................................................................
-    // Insert user code here. This is where you use the joystick values to
-    // update your motors, etc.
-    // ........................................................................
+    BLMotor.spin(vex::directionType::rev, left, vex::velocityUnits::pct);
+    MLMotor.spin(vex::directionType::rev, left, vex::velocityUnits::pct);
+    FLMotor.spin(vex::directionType::rev, left, vex::velocityUnits::pct);
+    BRMotor.spin(vex::directionType::fwd, right, vex::velocityUnits::pct);
+    MRMotor.spin(vex::directionType::fwd, right, vex::velocityUnits::pct);
+    FRMotor.spin(vex::directionType::fwd, right, vex::velocityUnits::pct);
 
-    wait(20, msec); // Sleep the task for a short amount of time to
-                    // prevent wasted resources.
+    if (Controller.ButtonR1.pressing()) {
+      IntakeState = !IntakeState;
+      if (IntakeState) {
+        IntakeLower.spin(vex::directionType::rev, 70, vex::velocityUnits::pct);
+        IntakeUpperL.spin(vex::directionType::fwd, 70, vex::velocityUnits::pct);
+        IntakeUpperR.spin(vex::directionType::rev, 70, vex::velocityUnits::pct);
+    } else {
+      IntakeLower.stop();
+      IntakeUpperL.stop();
+      IntakeUpperR.stop();
+    }
+    wait(200, msec);
+    }
+
+    if(Controller.ButtonR2.pressing())
+    {
+      driveTo(5000,5000,50);
+      wait(200, msec);
+    }
+    //Display motor values to screen
+    Brain.Screen.setCursor(1, 1);
+    Brain.Screen.print("BLMotor: %d", BLMotor.position(rev));
+    Brain.Screen.setCursor(2, 1);
+    Brain.Screen.print("MLMotor: %d", MLMotor.position(rev));
+    Brain.Screen.setCursor(3, 1);
+    Brain.Screen.print("FLMotor: %d", FLMotor.position(rev));
+    Brain.Screen.setCursor(4, 1);
+    Brain.Screen.print("BRMotor: %d", BRMotor.position(rev));
+    Brain.Screen.setCursor(5, 1);
+    Brain.Screen.print("MRMotor: %d", MRMotor.position(rev));
+    Brain.Screen.setCursor(6, 1);
+    Brain.Screen.print("FRMotor: %d", FRMotor.position(rev));
   }
 }
 
