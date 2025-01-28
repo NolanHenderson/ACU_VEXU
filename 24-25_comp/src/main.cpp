@@ -17,6 +17,7 @@ competition Competition;
 // define your global instances of motors and other devices here
 vex::controller Controller;
 vex::brain Brain;
+vex::inertial Inert(vex::PORT7);
 
 vex::motor BLMotor(vex::PORT8,vex::gearSetting::ratio6_1);
 vex::motor MLMotor(vex::PORT9,vex::gearSetting::ratio6_1);
@@ -41,6 +42,45 @@ void driveTo(int R, int L, int speed) {
   BRMotor.spinToPosition(R, vex::rotationUnits::rev, speed, vex::velocityUnits::pct, false);
   MRMotor.spinToPosition(R, vex::rotationUnits::rev, speed, vex::velocityUnits::pct, false);
   FRMotor.spinToPosition(R, vex::rotationUnits::rev, speed, vex::velocityUnits::pct, false);
+}
+void turnToAngle(double target_angle) {
+  const double kP = 0.1; // Proportional gain
+  const double kD = 0.3; // Derivative gain
+  double previous_error = 0;
+  Inert.resetRotation();
+
+  while (true) {
+    double current_angle = Inert.rotation(vex::rotationUnits::deg);
+    Controller.Screen.setCursor(1, 1);
+    Controller.Screen.print("Current Angle: %.2f", current_angle);
+    double error = target_angle - current_angle;
+    double derivative = error - previous_error;
+    double turn_speed = (error * kP) + (derivative * kD);
+
+    // Set motor speeds for turning
+    BLMotor.spin(vex::directionType::rev, turn_speed, vex::velocityUnits::pct);
+    MLMotor.spin(vex::directionType::rev, turn_speed, vex::velocityUnits::pct);
+    FLMotor.spin(vex::directionType::rev, turn_speed, vex::velocityUnits::pct);
+
+    BRMotor.spin(vex::directionType::rev, turn_speed, vex::velocityUnits::pct);
+    MRMotor.spin(vex::directionType::rev, turn_speed, vex::velocityUnits::pct);
+    FRMotor.spin(vex::directionType::rev, turn_speed, vex::velocityUnits::pct);
+
+    // Break the loop if the robot is close enough to the target angle
+    if (fabs(error) < 1 || current_angle > target_angle) {
+      break;
+    }
+
+    wait(20, msec); // Sleep the task for a short amount of time to prevent wasted resources.
+  }
+
+  // Stop the motors
+  BLMotor.stop();
+  MLMotor.stop();
+  FLMotor.stop();
+  BRMotor.stop();
+  MRMotor.stop();
+  FRMotor.stop();
 }
 
 /*---------------------------------------------------------------------------*/
@@ -114,7 +154,8 @@ void usercontrol(void) {
 
     if(Controller.ButtonR2.pressing())
     {
-      driveTo(5000,5000,50);
+      //DriveTo(5000,5000,50);
+      turnToAngle(90);
       wait(200, msec);
     }
     //Display motor values to screen
