@@ -18,6 +18,7 @@ competition Competition;
 vex::controller Controller;
 vex::brain Brain;
 vex::inertial Inert(vex::PORT7);
+vex::gps GPSSensor(vex::PORT6, 0);
 
 vex::motor BLMotor(vex::PORT8,vex::gearSetting::ratio6_1);
 vex::motor MLMotor(vex::PORT9,vex::gearSetting::ratio6_1);
@@ -35,19 +36,58 @@ vex::motor IntakeUpperR(vex::PORT11);
 
 
 //---------------------------------------------------------------------------//
-void driveTo(int R, int L, int speed) {
-  BLMotor.spinToPosition(L, vex::rotationUnits::rev, speed, vex::velocityUnits::pct, false);
-  MLMotor.spinToPosition(L, vex::rotationUnits::rev, speed, vex::velocityUnits::pct, false);
-  FLMotor.spinToPosition(L, vex::rotationUnits::rev, speed, vex::velocityUnits::pct, false);
-  BRMotor.spinToPosition(R, vex::rotationUnits::rev, speed, vex::velocityUnits::pct, false);
-  MRMotor.spinToPosition(R, vex::rotationUnits::rev, speed, vex::velocityUnits::pct, false);
-  FRMotor.spinToPosition(R, vex::rotationUnits::rev, speed, vex::velocityUnits::pct, false);
+
+void driveTo(double distance_in_inches, double speed) {
+  double target_distance = distance_in_inches * 360 / (3.25 * 3.14159); // Convert inches to degrees
+
+  // Reset motor encoders
+  BLMotor.resetPosition();
+  MLMotor.resetPosition();
+  FLMotor.resetPosition();
+  BRMotor.resetPosition();
+  MRMotor.resetPosition();
+  FRMotor.resetPosition();
+
+  while (true) {
+    // Calculate average motor rotation
+    double left_rotation = (BLMotor.position(vex::rotationUnits::deg) +
+                            MLMotor.position(vex::rotationUnits::deg) +
+                            FLMotor.position(vex::rotationUnits::deg)) / 3;
+    double right_rotation = (BRMotor.position(vex::rotationUnits::deg) +
+                             MRMotor.position(vex::rotationUnits::deg) +
+                             FRMotor.position(vex::rotationUnits::deg)) / 3;
+    double average_rotation = (abs(left_rotation) + abs(right_rotation)) / 2;
+
+    // Set motor speeds for driving
+    BLMotor.spin(vex::directionType::rev, speed, vex::velocityUnits::pct);
+    MLMotor.spin(vex::directionType::rev, speed, vex::velocityUnits::pct);
+    FLMotor.spin(vex::directionType::rev, speed, vex::velocityUnits::pct);
+
+    BRMotor.spin(vex::directionType::fwd, speed, vex::velocityUnits::pct);
+    MRMotor.spin(vex::directionType::fwd, speed, vex::velocityUnits::pct);
+    FRMotor.spin(vex::directionType::fwd, speed, vex::velocityUnits::pct);
+
+    // Break the loop if the robot has traveled the target distance
+    if (average_rotation >= target_distance) {
+      break;
+    }
+
+    wait(20, msec); // Sleep the task for a short amount of time to prevent wasted resources.
+  }
+
+  // Stop the motors
+  BLMotor.stop();
+  MLMotor.stop();
+  FLMotor.stop();
+  BRMotor.stop();
+  MRMotor.stop();
+  FRMotor.stop();
 }
 void turnToAngle(double target_angle) {
-  const double kP = 0.1; // Proportional gain
-  const double kD = 0.3; // Derivative gain
+  const double kP = 0.2; // Proportional gain
+  const double kD = 0.1; // Derivative gain
   double previous_error = 0;
-  Inert.resetRotation();
+  //Inert.resetRotation();
 
   while (true) {
     double current_angle = Inert.rotation(vex::rotationUnits::deg);
@@ -67,7 +107,13 @@ void turnToAngle(double target_angle) {
     FRMotor.spin(vex::directionType::rev, turn_speed, vex::velocityUnits::pct);
 
     // Break the loop if the robot is close enough to the target angle
-    if (fabs(error) < 1 || current_angle > target_angle) {
+    if (fabs(error) < 0.5) {
+      BLMotor.stop();
+      MLMotor.stop();
+      FLMotor.stop();
+      BRMotor.stop();
+      MRMotor.stop();
+      FRMotor.stop();
       break;
     }
 
@@ -81,6 +127,26 @@ void turnToAngle(double target_angle) {
   BRMotor.stop();
   MRMotor.stop();
   FRMotor.stop();
+}
+
+int displayGPSData() {
+  while (true) {
+    // Get GPS sensor data
+    double x_position = GPSSensor.xPosition(mm);
+    double y_position = GPSSensor.yPosition(mm);
+    double heading = GPSSensor.heading();
+
+    // Print GPS data to the brain screen
+    Brain.Screen.clearScreen();
+    Brain.Screen.setCursor(1, 1);
+    Brain.Screen.print("X: %.2f mm", x_position);
+    Brain.Screen.newLine();
+    Brain.Screen.print("Y: %.2f mm", y_position);
+    Brain.Screen.newLine();
+    Brain.Screen.print("Heading: %.2f degrees", heading);
+
+    wait(500, msec); // Update the screen every 500 milliseconds
+  }
 }
 
 /*---------------------------------------------------------------------------*/
@@ -126,10 +192,12 @@ void autonomous(void) {
 /*---------------------------------------------------------------------------*/
 
 void usercontrol(void) {
+  vex::task displayTask(displayGPSData);
   // User control code here, inside the loop
   while (1) {
     int left = Controller.Axis3.position();
     int right = Controller.Axis2.position();
+    double current_angle = Inert.rotation(vex::rotationUnits::deg);
 
     BLMotor.spin(vex::directionType::rev, left, vex::velocityUnits::pct);
     MLMotor.spin(vex::directionType::rev, left, vex::velocityUnits::pct);
@@ -158,19 +226,26 @@ void usercontrol(void) {
       turnToAngle(90);
       wait(200, msec);
     }
+    if(Controller.ButtonL2.pressing())
+    {
+      driveTo(6,5);
+      wait(200, msec);
+    }
     //Display motor values to screen
-    Brain.Screen.setCursor(1, 1);
-    Brain.Screen.print("BLMotor: %d", BLMotor.position(rev));
-    Brain.Screen.setCursor(2, 1);
-    Brain.Screen.print("MLMotor: %d", MLMotor.position(rev));
-    Brain.Screen.setCursor(3, 1);
-    Brain.Screen.print("FLMotor: %d", FLMotor.position(rev));
-    Brain.Screen.setCursor(4, 1);
-    Brain.Screen.print("BRMotor: %d", BRMotor.position(rev));
-    Brain.Screen.setCursor(5, 1);
-    Brain.Screen.print("MRMotor: %d", MRMotor.position(rev));
-    Brain.Screen.setCursor(6, 1);
-    Brain.Screen.print("FRMotor: %d", FRMotor.position(rev));
+    //Brain.Screen.setCursor(1, 1);
+    //Brain.Screen.print("BLMotor: %d", BLMotor.position(rev));
+    //Brain.Screen.setCursor(2, 1);
+    //Brain.Screen.print("MLMotor: %d", MLMotor.position(rev));
+    //Brain.Screen.setCursor(3, 1);
+    //Brain.Screen.print("FLMotor: %d", FLMotor.position(rev));
+    //Brain.Screen.setCursor(4, 1);
+    //Brain.Screen.print("BRMotor: %d", BRMotor.position(rev));
+    //Brain.Screen.setCursor(5, 1);
+    //Brain.Screen.print("MRMotor: %d", MRMotor.position(rev));
+    //Brain.Screen.setCursor(6, 1);
+    //Brain.Screen.print("FRMotor: %d", FRMotor.position(rev));
+    Controller.Screen.setCursor(1, 1);
+    Controller.Screen.print("Current Angle: %.2f", current_angle);
   }
 }
 
