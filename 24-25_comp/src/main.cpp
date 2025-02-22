@@ -30,7 +30,7 @@ vex::motor BRMotor(vex::PORT20,vex::gearSetting::ratio6_1);
 
 bool IntakeState = false;
 bool SavedState = false;
-int insped = 25;
+int insped = 50;
 vex::motor IntakeLower(vex::PORT1);
 vex::motor IntakeUpperL(vex::PORT12);
 vex::motor IntakeUpperR(vex::PORT11);
@@ -110,9 +110,11 @@ void TogFeedPneumatic(){
   }
 }
 void driveTo(double dist, double targetSpeed) {
+  Brain.Screen.clearScreen();
+  Brain.Screen.drawRectangle(0, 0, 480, 240, vex::color::red);
     // Constants for slew control
     const double SLEW_RATE = 10.0;  // Increase in speed percentage per 20ms
-    const double MIN_SPEED = 25.0;   // Minimum starting speed percentage
+    const double MIN_SPEED = 20.0;   // Minimum starting speed percentage
     
     // Reset all motor positions
     BLMotor.resetPosition();
@@ -137,9 +139,12 @@ void driveTo(double dist, double targetSpeed) {
     while((BLMotor.isSpinning() || MLMotor.isSpinning() || FLMotor.isSpinning() ||
            BRMotor.isSpinning() || MRMotor.isSpinning() || FRMotor.isSpinning()) && 
            currentSpeed < targetSpeed) {
-        
+        Brain.Screen.clearScreen();
+        Brain.Screen.drawRectangle(0, 0, 480, 240, vex::color::blue);
         // Increment speed
-        currentSpeed = fmin(currentSpeed + SLEW_RATE, targetSpeed);
+        currentSpeed = currentSpeed + SLEW_RATE;
+        //Controller.Screen.setCursor(1, 1);
+        //Controller.Screen.print("Current Speed: %.2f", currentSpeed);
         
         // Update motor velocities
         LeftDriveGroup.setVelocity(currentSpeed, vex::velocityUnits::pct);
@@ -147,15 +152,22 @@ void driveTo(double dist, double targetSpeed) {
         
         wait(20, msec);  // Small delay to control acceleration rate
     }
-    
+    Brain.Screen.clearScreen();
+    Brain.Screen.drawRectangle(0, 0, 480, 240, vex::color::yellow);
     // Wait for completion 
-      while(BLMotor.isSpinning() || MLMotor.isSpinning() || FLMotor.isSpinning() ||
-            BRMotor.isSpinning() || MRMotor.isSpinning() || FRMotor.isSpinning()) {
-          wait(20, msec);
+    while(BLMotor.isSpinning() || MLMotor.isSpinning() || FLMotor.isSpinning() ||
+          BRMotor.isSpinning() || MRMotor.isSpinning() || FRMotor.isSpinning()) {
+      if (BLMotor.temperature(vex::temperatureUnits::celsius) >=50 || MLMotor.temperature(vex::temperatureUnits::celsius) >=50 || FLMotor.temperature(vex::temperatureUnits::celsius) >=50 ||
+          BRMotor.temperature(vex::temperatureUnits::celsius) >=50 || MRMotor.temperature(vex::temperatureUnits::celsius) >=50 || FRMotor.temperature(vex::temperatureUnits::celsius) >=50){
+        break;
       }
+      wait(20, msec);
+    }
 }
 
 void turnToAngle(double target_angle) {
+  Brain.Screen.clearScreen();
+  Brain.Screen.drawRectangle(0, 0, 480, 240, vex::color::green);
   const double kP = 0.2; // Proportional gain
   const double kD = 0.1; // Derivative gain
   double previous_error = 0;
@@ -268,8 +280,8 @@ FeedExpander.open();
 Intake();
 turnToAngle(45); // turn to first ring
 driveTo(1500, 100); //drive to first ring
-turnToAngle(287); // turn next ring
-driveTo(2000, 100); //drive to 2nd ring
+turnToAngle(290); // turn next ring
+driveTo(2200, 100); //drive to 2nd ring
 }
 
 /*---------------------------------------------------------------------------*/
