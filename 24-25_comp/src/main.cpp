@@ -29,60 +29,132 @@ vex::motor MRMotor(vex::PORT19,vex::gearSetting::ratio6_1);
 vex::motor BRMotor(vex::PORT20,vex::gearSetting::ratio6_1);
 
 bool IntakeState = false;
+bool SavedState = false;
+int insped = 25;
 vex::motor IntakeLower(vex::PORT1);
 vex::motor IntakeUpperL(vex::PORT12);
 vex::motor IntakeUpperR(vex::PORT11);
 
+bool mogoState = false;
+vex::pneumatics MogoPiston(Brain.ThreeWirePort.F);
+vex::pneumatics FeedExpander(Brain.ThreeWirePort.G);
+
+vex::motor_group LeftDriveGroup(MLMotor, BLMotor, FLMotor);
+vex::motor_group RightDriveGroup(MRMotor, BRMotor, FRMotor);
 
 
 //---------------------------------------------------------------------------//
-
-void driveTo(double distance_in_inches, double speed) {
-  double target_distance = distance_in_inches * 360 / (3.25 * 3.14159); // Convert inches to degrees
-
-  // Reset motor encoders
-  BLMotor.resetPosition();
-  MLMotor.resetPosition();
-  FLMotor.resetPosition();
-  BRMotor.resetPosition();
-  MRMotor.resetPosition();
-  FRMotor.resetPosition();
-
-  while (true) {
-    // Calculate average motor rotation
-    double left_rotation = (BLMotor.position(vex::rotationUnits::deg) +
-                            MLMotor.position(vex::rotationUnits::deg) +
-                            FLMotor.position(vex::rotationUnits::deg)) / 3;
-    double right_rotation = (BRMotor.position(vex::rotationUnits::deg) +
-                             MRMotor.position(vex::rotationUnits::deg) +
-                             FRMotor.position(vex::rotationUnits::deg)) / 3;
-    double average_rotation = (abs(left_rotation) + abs(right_rotation)) / 2;
-
-    // Set motor speeds for driving
-    BLMotor.spin(vex::directionType::rev, speed, vex::velocityUnits::pct);
-    MLMotor.spin(vex::directionType::rev, speed, vex::velocityUnits::pct);
-    FLMotor.spin(vex::directionType::rev, speed, vex::velocityUnits::pct);
-
-    BRMotor.spin(vex::directionType::fwd, speed, vex::velocityUnits::pct);
-    MRMotor.spin(vex::directionType::fwd, speed, vex::velocityUnits::pct);
-    FRMotor.spin(vex::directionType::fwd, speed, vex::velocityUnits::pct);
-
-    // Break the loop if the robot has traveled the target distance
-    if (average_rotation >= target_distance) {
-      break;
+void Intake(){
+  IntakeState = !IntakeState;
+      if (IntakeState) {
+        IntakeLower.spin(vex::directionType::rev, insped, vex::velocityUnits::pct);
+        IntakeUpperL.spin(vex::directionType::rev, insped, vex::velocityUnits::pct);
+        IntakeUpperR.spin(vex::directionType::fwd, insped, vex::velocityUnits::pct);
+    } else {
+        IntakeLower.stop();
+        IntakeUpperL.stop();
+        IntakeUpperR.stop();
     }
-
-    wait(20, msec); // Sleep the task for a short amount of time to prevent wasted resources.
-  }
-
-  // Stop the motors
-  BLMotor.stop();
-  MLMotor.stop();
-  FLMotor.stop();
-  BRMotor.stop();
-  MRMotor.stop();
-  FRMotor.stop();
 }
+void ReverseIntake(){
+  IntakeLower.spin(vex::directionType::fwd, 50, vex::velocityUnits::pct);
+  IntakeUpperL.spin(vex::directionType::fwd, 50, vex::velocityUnits::pct);
+  IntakeUpperR.spin(vex::directionType::rev, 50, vex::velocityUnits::pct);
+}
+void StopIntake(){
+  IntakeLower.stop();
+  IntakeUpperL.stop();
+  IntakeUpperR.stop();
+  if (IntakeState){
+    IntakeLower.spin(vex::directionType::rev, insped, vex::velocityUnits::pct);
+    IntakeUpperL.spin(vex::directionType::rev, insped, vex::velocityUnits::pct);
+    IntakeUpperR.spin(vex::directionType::fwd, insped, vex::velocityUnits::pct);
+  }
+}
+void RightDrive(){
+  while(true){
+    double right = Controller.Axis3.position() - Controller.Axis1.position();
+    BRMotor.spin(vex::directionType::fwd, right, vex::velocityUnits::pct);
+    MRMotor.spin(vex::directionType::fwd, right, vex::velocityUnits::pct);
+    FRMotor.spin(vex::directionType::fwd, right, vex::velocityUnits::pct);
+  }
+}
+void LeftDrive(){
+  while(true){
+    double left = Controller.Axis3.position() + Controller.Axis1.position();
+    BLMotor.spin(vex::directionType::rev, left, vex::velocityUnits::pct);
+    MLMotor.spin(vex::directionType::rev, left, vex::velocityUnits::pct);
+    FLMotor.spin(vex::directionType::rev, left, vex::velocityUnits::pct);
+  }
+}
+void Mogo(bool state = mogoState){
+  if (mogoState){
+    MogoPiston.open();
+    mogoState = false;
+  } else {
+    MogoPiston.close();
+    mogoState = true;
+  }
+}
+void SpedUp(){
+  insped = insped+5;
+}
+void SpedDown(){
+  insped = insped-5;
+}
+void TogFeedPneumatic(){
+  if (FeedExpander.value() == 0){
+    FeedExpander.open();
+  } else {
+    FeedExpander.close();
+  }
+}
+void driveTo(double dist, double targetSpeed) {
+    // Constants for slew control
+    const double SLEW_RATE = 10.0;  // Increase in speed percentage per 20ms
+    const double MIN_SPEED = 25.0;   // Minimum starting speed percentage
+    
+    // Reset all motor positions
+    BLMotor.resetPosition();
+    MLMotor.resetPosition();
+    FLMotor.resetPosition();
+    BRMotor.resetPosition();
+    MRMotor.resetPosition();
+    FRMotor.resetPosition();
+    
+    // Initialize current speed
+    double currentSpeed = MIN_SPEED;
+    
+    // Set initial speeds
+    LeftDriveGroup.setVelocity(currentSpeed, vex::velocityUnits::pct);
+    RightDriveGroup.setVelocity(currentSpeed, vex::velocityUnits::pct);
+    
+    // Start the motion
+    LeftDriveGroup.spinFor(-dist, vex::rotationUnits::deg, currentSpeed, vex::velocityUnits::pct, false);
+    RightDriveGroup.spinFor(dist, vex::rotationUnits::deg, currentSpeed, vex::velocityUnits::pct, false);
+    
+    // Ramp up speed while motors are spinning
+    while((BLMotor.isSpinning() || MLMotor.isSpinning() || FLMotor.isSpinning() ||
+           BRMotor.isSpinning() || MRMotor.isSpinning() || FRMotor.isSpinning()) && 
+           currentSpeed < targetSpeed) {
+        
+        // Increment speed
+        currentSpeed = fmin(currentSpeed + SLEW_RATE, targetSpeed);
+        
+        // Update motor velocities
+        LeftDriveGroup.setVelocity(currentSpeed, vex::velocityUnits::pct);
+        RightDriveGroup.setVelocity(currentSpeed, vex::velocityUnits::pct);
+        
+        wait(20, msec);  // Small delay to control acceleration rate
+    }
+    
+    // Wait for completion 
+      while(BLMotor.isSpinning() || MLMotor.isSpinning() || FLMotor.isSpinning() ||
+            BRMotor.isSpinning() || MRMotor.isSpinning() || FRMotor.isSpinning()) {
+          wait(20, msec);
+      }
+}
+
 void turnToAngle(double target_angle) {
   const double kP = 0.2; // Proportional gain
   const double kD = 0.1; // Derivative gain
@@ -107,7 +179,7 @@ void turnToAngle(double target_angle) {
     FRMotor.spin(vex::directionType::rev, turn_speed, vex::velocityUnits::pct);
 
     // Break the loop if the robot is close enough to the target angle
-    if (fabs(error) < 0.5) {
+    if (fabs(error) < 0.75) {
       BLMotor.stop();
       MLMotor.stop();
       FLMotor.stop();
@@ -130,12 +202,14 @@ void turnToAngle(double target_angle) {
 }
 
 int displayGPSData() {
-  while (true) {
+  while(true){
+    Brain.Screen.clearScreen();
+    // Get GPS sensor data
     // Get GPS sensor data
     double x_position = GPSSensor.xPosition(mm);
     double y_position = GPSSensor.yPosition(mm);
     double heading = GPSSensor.heading();
-
+    int sped = insped;
     // Print GPS data to the brain screen
     Brain.Screen.clearScreen();
     Brain.Screen.setCursor(1, 1);
@@ -144,6 +218,14 @@ int displayGPSData() {
     Brain.Screen.print("Y: %.2f mm", y_position);
     Brain.Screen.newLine();
     Brain.Screen.print("Heading: %.2f degrees", heading);
+    Brain.Screen.newLine();
+    Brain.Screen.print("Left Temp: %.2f C", IntakeUpperL.temperature(vex::temperatureUnits::celsius));
+    Brain.Screen.newLine();
+    Brain.Screen.print("Right Temp: %.2f C", IntakeUpperR.temperature(vex::temperatureUnits::celsius));
+    Brain.Screen.newLine();
+    Brain.Screen.print("Mogo State: %s", mogoState ? "Closed, flase" : "Open, true");
+    Brain.Screen.newLine();
+    Brain.Screen.print("Feed Speed: %.0f", sped);
 
     wait(500, msec); // Update the screen every 500 milliseconds
   }
@@ -175,10 +257,19 @@ void pre_auton(void) {
 /*  You must modify the code to add your own robot specific commands here.   */
 /*---------------------------------------------------------------------------*/
 
-void autonomous(void) {
-  // ..........................................................................
-  // Insert autonomous user code here.
-  // ..........................................................................
+void auton() {
+driveTo(-1400, 100);
+Mogo(false); // open
+turnToAngle(40); // turn to goal
+driveTo(-980, 100); // drive to mogo
+Mogo(true); //close
+driveTo(1000,100); // drive out from latter
+FeedExpander.open();
+Intake();
+turnToAngle(45); // turn to first ring
+driveTo(1500, 100); //drive to first ring
+turnToAngle(287); // turn next ring
+driveTo(2000, 100); //drive to 2nd ring
 }
 
 /*---------------------------------------------------------------------------*/
@@ -193,59 +284,29 @@ void autonomous(void) {
 
 void usercontrol(void) {
   vex::task displayTask(displayGPSData);
+  thread driveRight(RightDrive);
+  thread driveLeft(LeftDrive);
+  FeedExpander.open();
   // User control code here, inside the loop
+  insped = 100;
   while (1) {
-    int left = Controller.Axis3.position();
-    int right = Controller.Axis2.position();
     double current_angle = Inert.rotation(vex::rotationUnits::deg);
-
-    BLMotor.spin(vex::directionType::rev, left, vex::velocityUnits::pct);
-    MLMotor.spin(vex::directionType::rev, left, vex::velocityUnits::pct);
-    FLMotor.spin(vex::directionType::rev, left, vex::velocityUnits::pct);
-    BRMotor.spin(vex::directionType::fwd, right, vex::velocityUnits::pct);
-    MRMotor.spin(vex::directionType::fwd, right, vex::velocityUnits::pct);
-    FRMotor.spin(vex::directionType::fwd, right, vex::velocityUnits::pct);
-
-    if (Controller.ButtonR1.pressing()) {
-      IntakeState = !IntakeState;
-      if (IntakeState) {
-        IntakeLower.spin(vex::directionType::rev, 70, vex::velocityUnits::pct);
-        IntakeUpperL.spin(vex::directionType::fwd, 70, vex::velocityUnits::pct);
-        IntakeUpperR.spin(vex::directionType::rev, 70, vex::velocityUnits::pct);
-    } else {
-      IntakeLower.stop();
-      IntakeUpperL.stop();
-      IntakeUpperR.stop();
-    }
-    wait(200, msec);
-    }
-
-    if(Controller.ButtonR2.pressing())
-    {
-      //DriveTo(5000,5000,50);
-      turnToAngle(90);
-      wait(200, msec);
-    }
-    if(Controller.ButtonL2.pressing())
-    {
-      driveTo(6,5);
-      wait(200, msec);
-    }
     //Display motor values to screen
     //Brain.Screen.setCursor(1, 1);
-    //Brain.Screen.print("BLMotor: %d", BLMotor.position(rev));
+    //Brain.Screen.print("BLMotor: %f", BLMotor.position(deg));
     //Brain.Screen.setCursor(2, 1);
-    //Brain.Screen.print("MLMotor: %d", MLMotor.position(rev));
+    //Brain.Screen.print("MLMotor: %f", MLMotor.position(deg));
     //Brain.Screen.setCursor(3, 1);
-    //Brain.Screen.print("FLMotor: %d", FLMotor.position(rev));
+    //Brain.Screen.print("FLMotor: %f", FLMotor.position(deg));
     //Brain.Screen.setCursor(4, 1);
-    //Brain.Screen.print("BRMotor: %d", BRMotor.position(rev));
+    //Brain.Screen.print("BRMotor: %f", BRMotor.position(deg));
     //Brain.Screen.setCursor(5, 1);
-    //Brain.Screen.print("MRMotor: %d", MRMotor.position(rev));
+    //Brain.Screen.print("MRMotor: %f", MRMotor.position(deg));
     //Brain.Screen.setCursor(6, 1);
-    //Brain.Screen.print("FRMotor: %d", FRMotor.position(rev));
+    //Brain.Screen.print("FRMotor: %f", FRMotor.position(deg));
     Controller.Screen.setCursor(1, 1);
-    Controller.Screen.print("Current Angle: %.2f", current_angle);
+    //Controller.Screen.print("Current Angle: %.2f", current_angle);
+    Controller.Screen.print("Feed Speed: %.0f", insped);
   }
 }
 
@@ -254,11 +315,19 @@ void usercontrol(void) {
 //
 int main() {
   // Set up callbacks for autonomous and driver control periods.
-  Competition.autonomous(autonomous);
+  Competition.autonomous(auton);
   Competition.drivercontrol(usercontrol);
+  Controller.ButtonR2.pressed(ReverseIntake);
+  Controller.ButtonR2.released(StopIntake);
+  Controller.ButtonR1.pressed(Intake);
+  Controller.ButtonB.pressed([]{ Mogo(mogoState); });
+  Controller.ButtonUp.pressed(SpedUp);
+  Controller.ButtonDown.pressed(SpedDown);
+  Controller.ButtonL1.pressed(TogFeedPneumatic);
 
   // Run the pre-autonomous function.
   pre_auton();
+
 
   // Prevent main from exiting with an infinite loop.
   while (true) {
